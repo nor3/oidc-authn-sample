@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: {{ .Values.global.namespace }}
+data:
+  opatest-realm.json: |
+    {
+      "realm": "opatest",
+      "enabled": true,
+      "accessTokenLifespan": 300,
+      "clients": [
+        {
+          "clientId": "opatest_client",
+          "enabled": true,
+          "publicClient": false,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": ["https://*", "http://localhost/*"],
+          "webOrigins": ["*"],
+          "protocol": "openid-connect",
+          "secret": "{{ .Values.keycloak.realm.client.secret }}"
+        }
+      ],
+      "roles": {
+        "realm": [
+          { "name": "viewer",  "description": "ドキュメント閲覧のみ" },
+          { "name": "editor",  "description": "ドキュメント作成・更新" },
+          { "name": "admin",   "description": "全操作 (削除含む)" }
+        ]
+      },
+      "users": [
+        {
+          "username": "test",
+          "enabled": true,
+          "credentials": [
+            { "type": "password", "value": "test", "temporary": false }
+          ],
+          "realmRoles": ["viewer", "editor"]
+        },
+        {
+          "username": "admin-user",
+          "enabled": true,
+          "credentials": [
+            { "type": "password", "value": "admin", "temporary": false }
+          ],
+          "realmRoles": ["viewer", "editor", "admin"]
+        }
+      ]
+    }

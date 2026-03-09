@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: opa
+spec:
+  replicas: {{ .Values.opa.replicas }}
+  selector:
+    matchLabels:
+      app: opa
+  template:
+    metadata:
+      labels:
+        app: opa
+    spec:
+      containers:
+        - name: opa
+          image: "{{ .Values.opa.image.repository }}:{{ .Values.opa.image.tag }}"
+          imagePullPolicy: {{ .Values.opa.image.pullPolicy }}
+          args:
+            {{- toYaml .Values.opa.args | nindent 12 }}
+          ports:
+            - containerPort: {{ .Values.opa.port }}
+          volumeMounts:
+            - name: policy
+              mountPath: /policies/authzen.rego
+              subPath: authzen.rego
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.opa.port }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.opa.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.opa.resources | nindent 12 }}
+      volumes:
+        - name: policy
+          configMap:
+            name: opa-policy

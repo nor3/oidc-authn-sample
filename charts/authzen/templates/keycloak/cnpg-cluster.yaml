@@ -1,0 +1,19 @@
+# CloudNativePG Cluster - Keycloak バックエンド DB
+# 前提: CloudNativePG Operator がインストール済みであること
+# kubectl apply -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.24.0.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.cnpg.cluster.name }}
+  namespace: {{ .Values.global.namespace }}
+spec:
+  instances: {{ .Values.cnpg.cluster.instances }}
+  postgresql:
+    parameters:
+      max_connections: "100"
+  storage:
+    size: {{ .Values.cnpg.cluster.storageSize }}
+  bootstrap:
+    initdb:
+      database: {{ .Values.keycloak.database.name }}
+      owner:    {{ .Values.keycloak.database.username }}

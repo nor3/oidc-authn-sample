@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: keycloak
+spec:
+  replicas: {{ .Values.keycloak.replicas }}
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      initContainers:
+        # CloudNativePG の準備完了を待つ
+        - name: wait-for-db
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z {{ .Values.cnpg.cluster.name }}-rw 5432; do
+                echo "Waiting for PostgreSQL..."; sleep 3
+              done
+      containers:
+        - name: keycloak
+          image: "{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}"
+          imagePullPolicy: {{ .Values.keycloak.image.pullPolicy }}
+          args:
+            - start-dev
+            - --import-realm
+          ports:
+            - containerPort: {{ .Values.keycloak.port }}
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: "jdbc:postgresql://{{ .Values.cnpg.cluster.name }}-rw/{{ .Values.keycloak.database.name }}"
+            - name: KC_DB_USERNAME
+              value: {{ .Values.keycloak.database.username | quote }}
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.database.passwordSecretRef.name }}
+                  key:  {{ .Values.keycloak.database.passwordSecretRef.key }}
+            - name: KEYCLOAK_ADMIN
+              value: {{ .Values.keycloak.admin.username | quote }}
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.admin.passwordSecretRef.name }}
+                  key:  {{ .Values.keycloak.admin.passwordSecretRef.key }}
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            # Keycloak 26 hostname v2: ブラウザ向けフロントエンドURLのホスト名（host:port形式）
+            - name: KC_HOSTNAME
+              value: {{ .Values.keycloak.hostname | quote }}
+            # バックチャネルURL(token_endpoint等)をリクエストのHostヘッダから動的決定する
+            # → OpenRestyからの内部アクセスは内部URLを返し、ブラウザ向けは外部URLを返す
+            - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+              value: "true"
+          volumeMounts:
+            - name: realm-config
+              mountPath: /opt/keycloak/data/import
+          readinessProbe:
+            httpGet:
+              path: /realms/master
+              port: {{ .Values.keycloak.port }}
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 10
+          resources:
+            {{- toYaml .Values.keycloak.resources | nindent 12 }}
+      volumes:
+        - name: realm-config
+          configMap:
+            name: keycloak-realm

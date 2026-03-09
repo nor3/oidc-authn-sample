@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-policy
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: opa
+data:
+  authzen.rego: |
+{{ .Values.opa.policy | indent 4 }}

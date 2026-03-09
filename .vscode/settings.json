@@ -1,0 +1,5 @@
+{
+"markdown.marp.enableHTML   ": "true",
+"pasteImage.path": "${currentFileDir}/images",
+"makefile.configureOnOpen": true
+}

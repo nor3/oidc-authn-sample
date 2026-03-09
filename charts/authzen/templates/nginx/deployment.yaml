@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: nginx
+spec:
+  replicas: {{ .Values.nginx.replicas }}
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/nginx/configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: nginx
+          image: "{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
+          imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
+          # /etc/resolv.conf から nameserver を読み取り nginx.conf テンプレートに注入してから起動
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              NAMESERVER=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf)
+              sed "s/__NAMESERVER__/$NAMESERVER/g" /etc/nginx-template/nginx.conf \
+                > /usr/local/openresty/nginx/conf/nginx.conf
+              exec /usr/local/openresty/bin/openresty -g 'daemon off;'
+          ports:
+            - containerPort: 80
+            - containerPort: 443
+          env:
+            - name: OIDC_DISCOVERY_URL
+              value: {{ .Values.nginx.oidc.discoveryUrl | quote }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.nginx.oidc.clientId | quote }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.nginx.oidc.clientSecretRef.name }}
+                  key:  {{ .Values.nginx.oidc.clientSecretRef.key }}
+            - name: OIDC_REDIRECT_URI
+              value: {{ .Values.nginx.oidc.redirectUri | quote }}
+            - name: OPA_URL
+              value: {{ .Values.nginx.opa.url | quote }}
+            - name: OPA_POLICY_PATH
+              value: {{ .Values.nginx.opa.policyPath | quote }}
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx-template/nginx.conf
+              subPath: nginx.conf
+            - name: tls-certs
+              mountPath: /certs
+              readOnly: true
+          resources:
+            {{- toYaml .Values.nginx.resources | nindent 12 }}
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: nginx-config
+        - name: tls-certs
+          secret:
+            secretName: {{ .Values.nginx.tls.secretName }}

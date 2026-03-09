@@ -1,0 +1,151 @@
+# ===================================================
+# Global
+# ===================================================
+global:
+  namespace: authzen
+
+# ===================================================
+# Backend (FastAPI)
+# ===================================================
+backend:
+  image:
+    repository: authzen/backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 8000
+  env:
+    OPA_MIDDLEWARE: "false"
+    OPA_URL: "http://opa.authzen.svc.cluster.local:8181"
+    OPA_POLICY_PATH: "v1/data/authzen/api/allow"
+    DEBUG: "false"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# ===================================================
+# Nginx (OpenResty PEP + OIDC Proxy)
+# ===================================================
+nginx:
+  image:
+    repository: authzen/nginx
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  ingress:
+    # Windows hosts: 127.0.0.1 authzen.local
+    host: "authzen.local"
+  oidc:
+    discoveryUrl: "http://keycloak.authzen.svc.cluster.local:8080/realms/opatest/.well-known/openid-configuration"
+    clientId: "opatest_client"
+    # クライアントシークレットは Secret で管理 (values.yamlに書かない)
+    clientSecretRef:
+      name: nginx-oidc-secret
+      key: client_secret
+    redirectUri: "https://authzen.local:30443/callback"
+    scope: "openid email profile"
+  opa:
+    url: "http://opa.authzen.svc.cluster.local:8181"
+    policyPath: "/v1/data/authzen/api/allow"
+  tls:
+    secretName: authzen-tls
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# ===================================================
+# OPA (Open Policy Agent)
+# ===================================================
+opa:
+  image:
+    repository: openpolicyagent/opa
+    tag: "1.14.1"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 8181
+  # ポリシーファイルの配置ディレクトリ (ConfigMapからマウント)
+  policyDir: /policies
+  # ポリシー内容は deploy.sh で --set-file opa.policy=policies/opa/authzen.rego として渡す
+  # Helm は chart 外のファイルを .Files.Get で読めないため Values 経由で受け渡す
+  policy: ""
+  args:
+    - run
+    - --server
+    - --addr=0.0.0.0:8181
+    - /policies/authzen.rego
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# ===================================================
+# Keycloak
+# ===================================================
+keycloak:
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: "26.5.5"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 8080
+  ingress:
+    # Windows hosts: 127.0.0.1 keycloak.local
+    host: "keycloak.local"
+  # ブラウザ向け外部URL (KC_HOSTNAME_URL)。make tunnel のポートに合わせる
+  # Keycloak 26 hostname v2: ブラウザ向けフロントエンドURLのホスト名
+  # KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true により token_endpoint はリクエストのHostから動的決定される
+  hostname: "http://keycloak.local:30080"
+  admin:
+    username: admin
+    # パスワードは Secret で管理
+    passwordSecretRef:
+      name: keycloak-admin-secret
+      key: password
+  realm:
+    name: opatest
+    client:
+      id: opatest_client
+      # クライアントシークレット: nginx-oidc-secret の client_secret と同じ値を設定すること
+      secret: "opatest-client-secret-changeme"
+    testUser:
+      username: test
+      # パスワードは Secret で管理
+      passwordSecretRef:
+        name: keycloak-test-user-secret
+        key: password
+  database:
+    # CloudNativePG クラスタ名
+    clusterName: keycloak-pg
+    name: keycloak
+    username: keycloak
+    passwordSecretRef:
+      name: keycloak-pg-app  # CloudNativePGが生成するSecret
+      key: password
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# ===================================================
+# CloudNativePG (Keycloak DB)
+# ===================================================
+cnpg:
+  cluster:
+    name: keycloak-pg
+    instances: 1
+    storageSize: 1Gi
+    postgresVersion: "16"

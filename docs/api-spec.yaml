@@ -1,0 +1,228 @@
+openapi: 3.0.3
+info:
+  title: AuthZEN Sample Backend API
+  description: |
+    OPA認可デモ用サンプルREST APIサービス。
+    ドキュメントリソースのCRUD操作を通じてOPAによるロールベース認可を検証する。
+
+    ## ロール定義 (Keycloak realm_access.roles)
+    - `viewer` : GET のみ許可
+    - `editor` : GET / POST / PUT 許可
+    - `admin`  : 全操作許可 (DELETE含む)
+  version: 1.0.0
+
+servers:
+  - url: https://localhost
+    description: ローカル開発 (Nginx経由)
+  - url: http://localhost:8000
+    description: バックエンド直接 (開発時のみ)
+
+paths:
+  /health:
+    get:
+      summary: ヘルスチェック
+      operationId: health_check
+      tags: [health]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/documents:
+    get:
+      summary: ドキュメント一覧取得
+      operationId: list_documents
+      tags: [documents]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: ドキュメント一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Document"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    post:
+      summary: ドキュメント作成
+      operationId: create_document
+      tags: [documents]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentCreate"
+      responses:
+        "201":
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /api/v1/documents/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: ドキュメント取得
+      operationId: get_document
+      tags: [documents]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: ドキュメント
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      summary: ドキュメント更新
+      operationId: update_document
+      tags: [documents]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentCreate"
+      responses:
+        "200":
+          description: 更新後のドキュメント
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      summary: ドキュメント削除
+      operationId: delete_document
+      tags: [documents]
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: 削除成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        opa_middleware:
+          type: boolean
+          example: false
+
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: string
+        owner:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required: [id, title, content, owner, created_at]
+
+    DocumentCreate:
+      type: object
+      properties:
+        title:
+          type: string
+          example: サンプルドキュメント
+        content:
+          type: string
+          example: ドキュメントの内容
+      required: [title, content]
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: 認証エラー
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: 認可エラー
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: リソース未発見
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnprocessableEntity:
+      description: バリデーションエラー
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

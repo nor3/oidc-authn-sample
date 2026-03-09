@@ -1,0 +1,15 @@
+apiVersion: v2
+name: authzen
+description: |
+  OPA認可 + Keycloak OIDC + Nginx PEP のデモ Helm チャート。
+  CloudNativePG を Keycloak のデータベースバックエンドとして使用する。
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - opa
+  - keycloak
+  - authzen
+  - authorization
+maintainers:
+  - name: authzen-demo

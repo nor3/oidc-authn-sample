@@ -1,0 +1,28 @@
+# 証明書 (秘密鍵は絶対にコミットしない)
+certs/*.key
+certs/*.pem
+certs/*.csr
+certs/*.srl
+# CA証明書はコミットしてもよい場合あり (公開鍵のみ)
+# certs/ca.crt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+# Helm
+charts/*/charts/
+charts/*/Chart.lock
+
+# その他
+.DS_Store
+*.swp
