@@ -1,3 +1,4 @@
+{{- if eq .Values.proxy.mode "nginx" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,7 +32,6 @@ spec:
               exec /usr/local/openresty/bin/openresty -g 'daemon off;'
           ports:
             - containerPort: 80
-            - containerPort: 443
           env:
             - name: OIDC_DISCOVERY_URL
               value: {{ .Values.nginx.oidc.discoveryUrl | quote }}
@@ -52,15 +52,10 @@ spec:
             - name: nginx-config
               mountPath: /etc/nginx-template/nginx.conf
               subPath: nginx.conf
-            - name: tls-certs
-              mountPath: /certs
-              readOnly: true
           resources:
             {{- toYaml .Values.nginx.resources | nindent 12 }}
       volumes:
         - name: nginx-config
           configMap:
             name: nginx-config
-        - name: tls-certs
-          secret:
-            secretName: {{ .Values.nginx.tls.secretName }}
+{{- end }}

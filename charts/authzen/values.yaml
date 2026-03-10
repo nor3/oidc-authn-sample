@@ -5,6 +5,15 @@ global:
   namespace: authzen
 
 # ===================================================
+# プロキシモード フィーチャースイッチ
+#   nginx      : OpenResty が OIDC 認証 + OPA 認可を担う (backend.env.OPA_MIDDLEWARE: "false")
+#   oauth2proxy: oauth2-proxy が OIDC 認証を担い、OPA は backend middleware で実行
+#                (backend.env.OPA_MIDDLEWARE: "true")
+# ===================================================
+proxy:
+  mode: nginx  # nginx | oauth2proxy
+
+# ===================================================
 # Backend (FastAPI)
 # ===================================================
 backend:
@@ -15,10 +24,11 @@ backend:
   replicas: 1
   port: 8000
   env:
-    OPA_MIDDLEWARE: "false"
+    OPA_MIDDLEWARE: "true"
     OPA_URL: "http://opa.authzen.svc.cluster.local:8181"
     OPA_POLICY_PATH: "v1/data/authzen/api/allow"
     DEBUG: "false"
+    LOG_LEVEL: "INFO"
   resources:
     requests:
       cpu: 100m
@@ -139,6 +149,41 @@ keycloak:
     limits:
       cpu: 1000m
       memory: 1Gi
+
+# ===================================================
+# oauth2-proxy (proxy.mode: oauth2proxy の場合に使用)
+# ===================================================
+oauth2proxy:
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    tag: "v7.8.2"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 4180
+  ingress:
+    # Windows hosts: 127.0.0.1 authzen.local
+    host: "authzen.local"
+  oidc:
+    # 内部 DNS で discovery を取得 (KC_HOSTNAME_BACKCHANNEL_DYNAMIC により token_endpoint は内部 URL)
+    # issuer 不一致は insecure-oidc-skip-issuer-verification で許容
+    issuerUrl: "http://keycloak.authzen.svc.cluster.local:8080/realms/opatest"
+    clientId: "opatest_client"
+    clientSecretRef:
+      name: nginx-oidc-secret   # nginx モードと同じ Secret を共用
+      key: client_secret
+    redirectUrl: "https://authzen.local:30443/oauth2/callback"
+  cookieSecretRef:
+    name: oauth2proxy-cookie-secret
+    key: cookie_secret
+  tls:
+    secretName: authzen-tls
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
 
 # ===================================================
 # CloudNativePG (Keycloak DB)

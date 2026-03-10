@@ -1,0 +1,17 @@
+{{- if eq .Values.proxy.mode "oauth2proxy" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2proxy
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: oauth2proxy
+spec:
+  type: ClusterIP
+  selector:
+    app: oauth2proxy
+  ports:
+    - name: http
+      port: {{ .Values.oauth2proxy.port }}
+      targetPort: {{ .Values.oauth2proxy.port }}
+{{- end }}

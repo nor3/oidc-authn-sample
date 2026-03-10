@@ -1,3 +1,4 @@
+{{- if eq .Values.proxy.mode "nginx" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -29,17 +30,9 @@ data:
       lua_shared_dict jwks     1m;
       lua_shared_dict sessions 10m;
 
-      # HTTP → HTTPS リダイレクト
+      # ingress-nginx が TLS を終端して HTTP で転送してくる
       server {
         listen 80;
-        return 301 https://$host$request_uri;
-      }
-
-      server {
-        listen 443 ssl;
-        ssl_certificate     /certs/tls.crt;
-        ssl_certificate_key /certs/tls.key;
-        ssl_protocols       TLSv1.2 TLSv1.3;
 
         set $access_token "";
 
@@ -124,3 +117,4 @@ data:
         }
       }
     }
+{{- end }}

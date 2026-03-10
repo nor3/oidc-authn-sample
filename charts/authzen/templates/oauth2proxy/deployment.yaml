@@ -1,0 +1,71 @@
+{{- if eq .Values.proxy.mode "oauth2proxy" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2proxy
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: oauth2proxy
+spec:
+  replicas: {{ .Values.oauth2proxy.replicas }}
+  selector:
+    matchLabels:
+      app: oauth2proxy
+  template:
+    metadata:
+      labels:
+        app: oauth2proxy
+    spec:
+      containers:
+        - name: oauth2proxy
+          image: "{{ .Values.oauth2proxy.image.repository }}:{{ .Values.oauth2proxy.image.tag }}"
+          imagePullPolicy: {{ .Values.oauth2proxy.image.pullPolicy }}
+          args:
+            - --provider=oidc
+            # KC_HOSTNAME_BACKCHANNEL_DYNAMIC により内部DNSで取得した discovery の
+            # token_endpoint は内部URL。issuer は外部URL(keycloak.local)のため
+            # --insecure-oidc-skip-issuer-verification で不一致を許容する
+            - --oidc-issuer-url={{ .Values.oauth2proxy.oidc.issuerUrl }}
+            - --insecure-oidc-skip-issuer-verification=true
+            - --ssl-insecure-skip-verify=true
+            - --client-id={{ .Values.oauth2proxy.oidc.clientId }}
+            - --redirect-url={{ .Values.oauth2proxy.oidc.redirectUrl }}
+            - --upstream=http://backend:{{ .Values.backend.port }}
+            - --http-address=0.0.0.0:{{ .Values.oauth2proxy.port }}
+            - --email-domain=*
+            # アクセストークンを Authorization: Bearer ヘッダとして upstream に転送
+            - --set-authorization-header=true
+            - --pass-access-token=true
+            # ingress-nginx が TLS を終端するため、X-Forwarded-Proto を信頼する
+            - --reverse-proxy=true
+            - --cookie-secure=true
+            - --cookie-samesite=lax
+            - --skip-provider-button=true
+          env:
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oauth2proxy.oidc.clientSecretRef.name }}
+                  key: {{ .Values.oauth2proxy.oidc.clientSecretRef.key }}
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oauth2proxy.cookieSecretRef.name }}
+                  key: {{ .Values.oauth2proxy.cookieSecretRef.key }}
+          ports:
+            - containerPort: {{ .Values.oauth2proxy.port }}
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: {{ .Values.oauth2proxy.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: {{ .Values.oauth2proxy.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.oauth2proxy.resources | nindent 12 }}
+{{- end }}

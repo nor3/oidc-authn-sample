@@ -56,8 +56,14 @@ fi
 
 echo ""
 echo "=== Secrets の検証 ==="
+# proxy.mode を values.yaml から読み取る
+PROXY_MODE=$(grep '^  mode:' "$CHART/values.yaml" | head -1 | awk '{print $2}')
+REQUIRED_SECRETS=(authzen-tls nginx-oidc-secret keycloak-admin-secret)
+if [ "$PROXY_MODE" = "oauth2proxy" ]; then
+  REQUIRED_SECRETS+=(oauth2proxy-cookie-secret)
+fi
 MISSING=()
-for secret in authzen-tls nginx-oidc-secret keycloak-admin-secret; do
+for secret in "${REQUIRED_SECRETS[@]}"; do
   if ! kubectl get secret "$secret" -n "$NAMESPACE" &>/dev/null; then
     MISSING+=("$secret")
   fi
@@ -97,7 +103,11 @@ kubectl get pods -n "$NAMESPACE"
 echo ""
 echo "=== アクセスURL ==="
 MINIKUBE_IP="$(minikube ip --profile=$PROFILE)"
-echo "  https://$MINIKUBE_IP:30443  (nginx HTTPS)"
-echo "  http://$MINIKUBE_IP:30080   (nginx HTTP → HTTPS redirect)"
+if [ "$PROXY_MODE" = "oauth2proxy" ]; then
+  echo "  https://$MINIKUBE_IP:30443  (oauth2-proxy HTTPS / ingress TLS終端)"
+else
+  echo "  https://$MINIKUBE_IP:30443  (nginx HTTPS)"
+  echo "  http://$MINIKUBE_IP:30080   (nginx HTTP → HTTPS redirect)"
+fi
 echo ""
-echo "デプロイ完了。"
+echo "デプロイ完了。 (proxy.mode=$PROXY_MODE)"

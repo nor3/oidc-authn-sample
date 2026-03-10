@@ -63,6 +63,13 @@ kubectl create secret generic keycloak-admin-secret \
 kubectl create secret generic keycloak-test-user-secret \
   --from-literal=password=test \
   -n $NAMESPACE
+
+# oauth2-proxy クッキー暗号化シークレット (proxy.mode: oauth2proxy の場合のみ必要)
+# 32バイトのランダム値を base64 エンコードして設定する
+COOKIE_SECRET=$(openssl rand -base64 32 | tr -d '\n')
+kubectl create secret generic oauth2proxy-cookie-secret \
+  --from-literal=cookie_secret="$COOKIE_SECRET" \
+  -n $NAMESPACE
 ```
 
 ## 5. Helm デプロイ

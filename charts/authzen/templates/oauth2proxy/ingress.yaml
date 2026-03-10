@@ -1,29 +1,30 @@
-{{- if eq .Values.proxy.mode "nginx" }}
+{{- if eq .Values.proxy.mode "oauth2proxy" }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: nginx
+  name: oauth2proxy
   namespace: {{ .Values.global.namespace }}
   labels:
-    app: nginx
+    app: oauth2proxy
   annotations:
+    # ingress-nginx が TLS を終端して oauth2-proxy (HTTP) に転送する
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
 spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - {{ .Values.nginx.ingress.host }}
-      secretName: {{ .Values.nginx.tls.secretName }}
+        - {{ .Values.oauth2proxy.ingress.host }}
+      secretName: {{ .Values.oauth2proxy.tls.secretName }}
   rules:
-    - host: {{ .Values.nginx.ingress.host }}
+    - host: {{ .Values.oauth2proxy.ingress.host }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: nginx
+                name: oauth2proxy
                 port:
-                  number: 80
+                  number: {{ .Values.oauth2proxy.port }}
 {{- end }}
