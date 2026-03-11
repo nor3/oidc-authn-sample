@@ -11,7 +11,7 @@ global:
 #                (backend.env.OPA_MIDDLEWARE: "true")
 # ===================================================
 proxy:
-  mode: nginx  # nginx | oauth2proxy
+  mode: oauth2proxy  # nginx | oauth2proxy
 
 # ===================================================
 # Backend (FastAPI)

@@ -260,3 +260,243 @@ args:
 ```
 
 本プロジェクトでは `charts/authzen/templates/opa/deployment.yaml` に適用済み。
+
+---
+
+## 8. lua-resty-session 4.x と lua-resty-openidc 1.7.5 の非互換性
+
+### 症状
+
+nginx Pod で OIDC コールバックを処理するときに以下のエラーが出て 500 が返る。
+
+```
+lua entry thread aborted: runtime error: .../resty/session.lua:xxx:
+attempt to index field 'identifiers' (a nil value)
+no file '.../resty/session/identifiers/random.lua'
+```
+
+または、コールバックリクエストで `request to the redirect_uri path but there's no session state found` となり 401 が返る。
+
+### 原因
+
+`opm get bungle/lua-resty-session` はバージョン指定なしでは最新版 (4.x) をインストールする。
+lua-resty-session 4.x は API が大幅に変更されており、lua-resty-openidc 1.7.5 が使用する 3.x の API
+(`session.open()`, `session.data.*`, `session:save()`) と非互換である。
+
+### 対処法
+
+Dockerfile で opm を使って lua-resty-openidc をインストールした後、
+lua-resty-session 3.10 (最後の 3.x リリース) を GitHub から手動で上書きインストールする。
+
+opm はバージョン指定構文 (`@version`) をサポートしないため、手動取得が必要。
+
+```dockerfile
+RUN opm get ledgetech/lua-resty-http \
+             zmartzone/lua-resty-openidc && \
+    wget -qO /tmp/session.tar.gz \
+         https://github.com/bungle/lua-resty-session/archive/refs/tags/v3.10.tar.gz && \
+    tar -xzf /tmp/session.tar.gz -C /tmp && \
+    rm -rf /usr/local/openresty/site/lualib/resty/session && \
+    cp /tmp/lua-resty-session-3.10/lib/resty/session.lua \
+       /usr/local/openresty/site/lualib/resty/session.lua && \
+    cp -r /tmp/lua-resty-session-3.10/lib/resty/session \
+          /usr/local/openresty/site/lualib/resty/ && \
+    rm -rf /tmp/session.tar.gz /tmp/lua-resty-session-3.10
+```
+
+`rm -rf` で既存の 4.x ディレクトリを削除してから `cp -r` すること。
+削除せずに `cp -r src dst` すると `dst` が既存の場合にネストされ (`dst/session/`) サブモジュールが見つからなくなる。
+
+### 関連ファイル
+
+- `apps/nginx/Dockerfile`
+
+---
+
+## 9. Keycloak 26 の KC_HOSTNAME に `host:port` 形式は不正
+
+### 症状
+
+Keycloak Pod が起動直後にクラッシュし、ログに以下が出る。
+
+```
+ERROR: Provided hostname is neither a plain hostname nor a valid URL
+```
+
+### 原因
+
+Keycloak 26 の hostname v2 設定 (`KC_HOSTNAME`) には以下のいずれかを指定する必要がある。
+
+- プレーンなホスト名: `keycloak.local`
+- プロトコルを含む完全 URL: `http://keycloak.local:30080`
+
+`keycloak.local:30080` のようなプロトコルなし host:port 形式は受け付けられない。
+
+### 対処法
+
+`values.yaml` の `keycloak.hostname` にプロトコルを含む完全 URL を設定する。
+
+```yaml
+keycloak:
+  hostname: "http://keycloak.local:30080"
+```
+
+`KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` と組み合わせることで、
+discovery ドキュメントの `authorization_endpoint` は外部 URL (`http://keycloak.local:30080/...`)、
+`token_endpoint` はリクエストの Host ヘッダーから内部 URL (`http://keycloak.authzen.svc.cluster.local:8080/...`) が動的に返される。
+
+### 関連ファイル
+
+- `charts/authzen/values.yaml` — `keycloak.hostname`
+- `charts/authzen/templates/keycloak/deployment.yaml` — `KC_HOSTNAME`, `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`
+
+---
+
+## 10. nginx-oidc-secret の client_secret が Keycloak の自動生成値と不一致
+
+### 症状
+
+OIDC コールバック時に以下のエラーが返り、トークン交換が失敗する。
+
+```json
+{"error":"unauthorized_client","error_description":"Invalid client or Invalid client credentials"}
+```
+
+### 原因
+
+`nginx-oidc-secret` は手動で事前作成するが、デフォルト値が `CHANGE_ME` のまま。
+Keycloak のレルムインポート時にクライアントシークレットが指定されていない場合、
+Keycloak がランダム値を自動生成するため、Secret の値と一致しない。
+
+### 対処法
+
+`charts/authzen/templates/keycloak/realm-configmap.yaml` のクライアント定義に固定シークレットを指定し、
+`values.yaml` の `keycloak.realm.client.secret` と `nginx-oidc-secret` を同じ値で揃える。
+
+```yaml
+# values.yaml
+keycloak:
+  realm:
+    client:
+      secret: "opatest-client-secret-changeme"
+```
+
+```bash
+# nginx-oidc-secret 作成時
+kubectl create secret generic nginx-oidc-secret \
+  --from-literal=client_secret=opatest-client-secret-changeme \
+  -n authzen
+```
+
+既存環境で Keycloak がすでに自動生成済みの場合は kcadm.sh で現在値を取得して Secret を更新する。
+
+```bash
+kubectl exec -n authzen deployment/keycloak -- \
+  /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 --realm master --user admin --password <password>
+
+kubectl exec -n authzen deployment/keycloak -- \
+  /opt/keycloak/bin/kcadm.sh get clients -r opatest --fields clientId,secret
+
+kubectl patch secret nginx-oidc-secret -n authzen \
+  --type='json' \
+  -p="[{\"op\":\"replace\",\"path\":\"/data/client_secret\",\"value\":\"$(echo -n '<secret>' | base64)\"}]"
+```
+
+### 関連ファイル
+
+- `charts/authzen/templates/keycloak/realm-configmap.yaml` — `"secret"` フィールド
+- `charts/authzen/values.yaml` — `keycloak.realm.client.secret`
+- `infra/k8s/minikube-setup.md` — Secret 作成手順
+
+---
+
+## 11. nginx Bearer トークンバイパスで OPA input が res を参照し続けるバグ
+
+### 症状
+
+Swagger UI や API クライアントから Bearer トークン付きリクエストを送ると 500 エラーになる。
+
+```
+lua entry thread aborted: runtime error: access_by_lua(...):
+attempt to index global 'res' (a nil value)
+```
+
+### 原因
+
+nginx Lua コードを「Bearer トークンがあれば OIDC セッションフローをスキップ」するよう変更した際、
+OIDC フローの `res` オブジェクトから `token` 変数へ切り替えたが、
+OPA へのリクエスト入力部分が `res.access_token` を参照したままになっていた。
+Bearer パス (`token = auth_header:sub(8)`) では `res` が nil のためクラッシュする。
+
+### 対処法
+
+OPA input の token 参照を `res.access_token` から `token` 変数に統一する。
+
+```lua
+-- NG
+local opa_input = cjson.encode({
+  input = { token = res.access_token, ... }
+})
+
+-- OK
+local opa_input = cjson.encode({
+  input = { token = token, ... }
+})
+```
+
+また、`openidc.authenticate()` が `nil, nil` を返す場合（コールバック処理後の内部リダイレクト等）への対処も必要。
+
+```lua
+local res, err = openidc.authenticate(opts)
+if err then
+  -- エラー処理 + ngx.exit()
+end
+if not res then
+  return  -- openidc がレスポンス処理済み（リダイレクト等）
+end
+token = res.access_token
+```
+
+### 関連ファイル
+
+- `charts/authzen/templates/nginx/configmap.yaml`
+
+---
+
+## 12. Swagger UI の API 呼び出しが CORS エラーになる (nginx モード)
+
+### 症状
+
+Swagger UI から API を実行すると "Failed to fetch" となる。
+
+### 原因
+
+nginx の OIDC フローはセッション/Cookie ベースのため、Bearer トークンなしの XHR リクエストに対して
+Keycloak (`http://keycloak.local:30080`) へのリダイレクト (302) を返す。
+XHR/fetch はクロスオリジンリダイレクトをブラウザが CORS ポリシーでブロックする。
+
+### 対処法
+
+nginx で `Authorization: Bearer` ヘッダーが存在する場合は OIDC セッションフローをスキップし、
+トークンをそのまま OPA チェックに使用する。
+
+```lua
+local auth_header = ngx.req.get_headers()["Authorization"] or ""
+if auth_header:sub(1, 7) == "Bearer " then
+  token = auth_header:sub(8)  -- Bearer トークンをそのまま使用
+else
+  -- セッションベース OIDC フロー（ブラウザ向け）
+  local res, err = openidc.authenticate(opts)
+  ...
+end
+```
+
+Swagger UI での使い方:
+1. `https://authzen.local:30443/docs` を開く
+2. 「Authorize」ボタンをクリックし、Keycloak から取得した access_token を入力
+3. 以降のリクエストに `Authorization: Bearer <token>` が自動付与される
+
+### 関連ファイル
+
+- `charts/authzen/templates/nginx/configmap.yaml`

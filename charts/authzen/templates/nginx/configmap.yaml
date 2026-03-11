@@ -34,6 +34,12 @@ data:
       server {
         listen 80;
 
+        # ingress-nginx からの X-Forwarded-Proto を引き継ぐ (なければ $scheme=http)
+        set $real_proto $http_x_forwarded_proto;
+        if ($real_proto = "") {
+          set $real_proto $scheme;
+        }
+
         set $access_token "";
 
         # --- OIDC認証 + OPA認可 ---
@@ -43,33 +49,46 @@ data:
             local http    = require("resty.http")
             local cjson   = require("cjson")
 
-            -- OIDC 認証
-            local opts = {
-              redirect_uri    = os.getenv("OIDC_REDIRECT_URI"),
-              discovery       = os.getenv("OIDC_DISCOVERY_URL"),
-              client_id       = os.getenv("OIDC_CLIENT_ID"),
-              client_secret   = os.getenv("OIDC_CLIENT_SECRET"),
-              scope           = "openid email profile",
-              session_contents = { access_token = true },
-              ssl_verify      = "no",  -- 開発用: 本番では "yes" にすること
-            }
+            local token = nil
+            local auth_header = ngx.req.get_headers()["Authorization"] or ""
 
-            local res, err = openidc.authenticate(opts)
-            if err then
-              ngx.log(ngx.ERR, "OIDC auth error: ", err)
-              ngx.status = 401
-              ngx.header["Content-Type"] = "application/json"
-              ngx.say(cjson.encode({ detail = "Unauthorized" }))
-              ngx.exit(ngx.HTTP_UNAUTHORIZED)
+            if auth_header:sub(1, 7) == "Bearer " then
+              -- API クライアント (Swagger UI 等): Bearer トークンをそのまま使用
+              -- OIDC セッションフロー(Keycloak リダイレクト)をスキップ
+              token = auth_header:sub(8)
+            else
+              -- ブラウザ: セッションベース OIDC フロー
+              local opts = {
+                redirect_uri     = os.getenv("OIDC_REDIRECT_URI"),
+                discovery        = os.getenv("OIDC_DISCOVERY_URL"),
+                client_id        = os.getenv("OIDC_CLIENT_ID"),
+                client_secret    = os.getenv("OIDC_CLIENT_SECRET"),
+                scope            = "openid email profile",
+                session_contents = { access_token = true },
+                ssl_verify       = "no",  -- 開発用: 本番では "yes" にすること
+              }
+              local res, err = openidc.authenticate(opts)
+              if err then
+                ngx.log(ngx.ERR, "OIDC auth error: ", err)
+                ngx.status = 401
+                ngx.header["Content-Type"] = "application/json"
+                ngx.say(cjson.encode({ detail = "Unauthorized" }))
+                ngx.exit(ngx.HTTP_UNAUTHORIZED)
+              end
+              if not res then
+                -- openidc がコールバック処理やリダイレクトをすでに実施済み
+                return
+              end
+              token = res.access_token
             end
 
-            ngx.var.access_token = res.access_token
+            ngx.var.access_token = token
 
             -- OPA 認可チェック
             local httpc = http.new()
             local opa_input = cjson.encode({
               input = {
-                token  = res.access_token,
+                token  = token,
                 method = ngx.req.get_method(),
                 path   = ngx.var.uri,
                 query  = ngx.var.args or "",
@@ -107,13 +126,37 @@ data:
           proxy_set_header Host              $host;
           proxy_set_header X-Real-IP         $remote_addr;
           proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_set_header X-Forwarded-Proto $real_proto;
           proxy_set_header Authorization     "Bearer $access_token";
         }
 
-        # ヘルスチェックはOIDC不要
+        # ヘルスチェック・Swagger UI は OIDC/OPA 不要
         location = /health {
           proxy_pass http://backend:{{ .Values.backend.port }}/health;
+        }
+
+        location /docs {
+          proxy_pass http://backend:{{ .Values.backend.port }};
+          proxy_set_header Host              $host;
+          proxy_set_header X-Real-IP         $remote_addr;
+          proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $real_proto;
+        }
+
+        location /redoc {
+          proxy_pass http://backend:{{ .Values.backend.port }};
+          proxy_set_header Host              $host;
+          proxy_set_header X-Real-IP         $remote_addr;
+          proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $real_proto;
+        }
+
+        location = /openapi.json {
+          proxy_pass http://backend:{{ .Values.backend.port }};
+          proxy_set_header Host              $host;
+          proxy_set_header X-Real-IP         $remote_addr;
+          proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $real_proto;
         }
       }
     }

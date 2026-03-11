@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     opa_middleware: bool = False
     opa_policy_path: str = "v1/data/authzen/api/allow"
 
+    # CORS許可オリジン (カンマ区切り or リスト)
+    cors_origins: list[str] = ["*"]
+
     model_config = {"env_prefix": ""}
 
 

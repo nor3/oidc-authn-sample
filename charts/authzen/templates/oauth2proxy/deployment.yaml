@@ -41,6 +41,10 @@ spec:
             - --cookie-secure=true
             - --cookie-samesite=lax
             - --skip-provider-button=true
+            # Swagger UI パスは認証バイパス
+            - --skip-auth-route=^/docs
+            - --skip-auth-route=^/redoc
+            - --skip-auth-route=^/openapi\.json$
           env:
             - name: OAUTH2_PROXY_CLIENT_SECRET
               valueFrom:

@@ -1,7 +1,20 @@
+from fnmatch import fnmatch
+
 import httpx
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+
+# デフォルトの OPA チェックスキップパターン（glob 形式）
+DEFAULT_SKIP_PATTERNS: list[str] = [
+    "/health",
+    "/health/*",
+    "/docs",
+    "/docs/*",
+    "/redoc",
+    "/openapi.json",
+    "/auth/token",
+]
 
 
 class OPAMiddleware(BaseHTTPMiddleware):
@@ -11,16 +24,28 @@ class OPAMiddleware(BaseHTTPMiddleware):
 
     リクエスト毎に OPA REST API へ認可リクエストを送信し、
     allow=true の場合のみリクエストを通過させる。
+
+    skip_patterns: OPA チェックをスキップするパスの glob パターンリスト。
+                   省略時は DEFAULT_SKIP_PATTERNS を使用。
     """
 
-    def __init__(self, app, opa_url: str, policy_path: str):
+    def __init__(
+        self,
+        app,
+        opa_url: str,
+        policy_path: str,
+        skip_patterns: list[str] | None = None,
+    ):
         super().__init__(app)
         self.opa_url = opa_url
         self.policy_path = policy_path
+        self.skip_patterns = skip_patterns if skip_patterns is not None else DEFAULT_SKIP_PATTERNS
+
+    def _should_skip(self, path: str) -> bool:
+        return any(fnmatch(path, pattern) for pattern in self.skip_patterns)
 
     async def dispatch(self, request: Request, call_next):
-        # ヘルスチェックはスキップ
-        if request.url.path == "/health":
+        if self._should_skip(request.url.path):
             return await call_next(request)
 
         auth_header = request.headers.get("authorization", "")

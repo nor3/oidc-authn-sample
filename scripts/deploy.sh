@@ -20,20 +20,6 @@ docker run --rm \
 echo "Syntax Check OK"
 
 echo ""
-echo "=== ingress-nginx ssl-passthrough の有効化 ==="
-if ! kubectl get deployment ingress-nginx-controller -n ingress-nginx \
-     -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null \
-     | grep -q 'enable-ssl-passthrough'; then
-  kubectl patch deployment ingress-nginx-controller -n ingress-nginx \
-    --type=json \
-    -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--enable-ssl-passthrough"}]'
-  kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=90s
-  echo "ssl-passthrough を有効化しました。"
-else
-  echo "ssl-passthrough は既に有効です。"
-fi
-
-echo ""
 echo "=== minikube Docker環境に切り替え ==="
 eval "$(minikube docker-env --profile=$PROFILE)"
 
@@ -95,6 +81,11 @@ helm upgrade --install "$RELEASE" "$CHART" \
     echo "kubectl logs -n $NAMESPACE -l app=opa"
     exit 1
   }
+
+echo ""
+echo "=== backend ローリング再起動 (latest イメージ反映) ==="
+kubectl rollout restart deployment/backend -n "$NAMESPACE"
+kubectl rollout status deployment/backend -n "$NAMESPACE" --timeout=60s
 
 echo ""
 echo "=== デプロイ状況 ==="
