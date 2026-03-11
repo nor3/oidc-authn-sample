@@ -51,6 +51,10 @@ class OPAMiddleware(BaseHTTPMiddleware):
         auth_header = request.headers.get("authorization", "")
         token = auth_header.removeprefix("Bearer ").removeprefix("bearer ").strip()
 
+        # oauth2-proxy proxy モードでは access token が X-Forwarded-Access-Token で届く
+        if not token:
+            token = request.headers.get("x-forwarded-access-token", "").strip()
+
         if not token:
             return JSONResponse(
                 status_code=401,

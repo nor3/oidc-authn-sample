@@ -56,7 +56,7 @@ nginx:
     clientSecretRef:
       name: nginx-oidc-secret
       key: client_secret
-    redirectUri: "https://authzen.local:30443/callback"
+    redirectUri: "https://authzen.local/callback"
     scope: "openid email profile"
   opa:
     url: "http://opa.authzen.svc.cluster.local:8181"
@@ -112,10 +112,12 @@ keycloak:
   ingress:
     # Windows hosts: 127.0.0.1 keycloak.local
     host: "keycloak.local"
+    tls:
+      secretName: authzen-tls  # authzen.local + keycloak.local の SAN を含む証明書
   # ブラウザ向け外部URL (KC_HOSTNAME_URL)。make tunnel のポートに合わせる
   # Keycloak 26 hostname v2: ブラウザ向けフロントエンドURLのホスト名
   # KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true により token_endpoint はリクエストのHostから動的決定される
-  hostname: "http://keycloak.local:30080"
+  hostname: "https://keycloak.local"
   admin:
     username: admin
     # パスワードは Secret で管理
@@ -171,7 +173,7 @@ oauth2proxy:
     clientSecretRef:
       name: nginx-oidc-secret   # nginx モードと同じ Secret を共用
       key: client_secret
-    redirectUrl: "https://authzen.local:30443/oauth2/callback"
+    redirectUrl: "https://authzen.local/oauth2/callback"
   cookieSecretRef:
     name: oauth2proxy-cookie-secret
     key: cookie_secret

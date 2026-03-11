@@ -31,6 +31,8 @@ minikube start --profile=authzen \
 
 ## 3. TLS 証明書の生成
 
+証明書は `authzen.local` と `keycloak.local` の両方を SAN に含む単一の証明書を使用します。
+
 ```bash
 bash scripts/generate-certs.sh
 ```
@@ -66,9 +68,9 @@ kubectl create secret generic keycloak-test-user-secret \
 
 # oauth2-proxy クッキー暗号化シークレット (proxy.mode: oauth2proxy の場合のみ必要)
 # 32バイトのランダム値を base64 エンコードして設定する
-COOKIE_SECRET=$(openssl rand -base64 32 | tr -d '\n')
+COOKIE_SECRET=$(openssl rand -base64 32 | tr -- '+/' '-_')
 kubectl create secret generic oauth2proxy-cookie-secret \
-  --from-literal=cookie_secret="$COOKIE_SECRET" \
+  --from-literal=cookie_secret=${COOKIE_SECRET} \
   -n $NAMESPACE
 ```
 
@@ -85,11 +87,12 @@ bash scripts/deploy.sh
 minikube ip --profile=authzen
 
 # /etc/hosts に追加 (Windows: C:\Windows\System32\drivers\etc\hosts)
-# <MINIKUBE_IP> authzen.local
+# <MINIKUBE_IP> authzen.local keycloak.local
 
 # ブラウザで https://authzen.local にアクセス
-# → Keycloak ログイン画面にリダイレクトされる
+# → Keycloak ログイン画面 (https://keycloak.local) にリダイレクトされる
 # ユーザ: test / test
+# Keycloak 管理コンソール: https://keycloak.local
 ```
 
 ## トラブルシューティング

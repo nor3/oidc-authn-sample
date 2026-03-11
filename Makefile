@@ -39,8 +39,8 @@ tunnel: ## WindowsホストからのアクセスURL等を表示する (実行は
 	@echo "  3. Windows hosts ファイルへのホスト名追加"
 	@echo ""
 	@echo "【アクセスURL】"
-	@echo "  アプリ:          https://authzen.local:30443"
-	@echo "  Keycloak 管理:   http://keycloak.local:30080"
+	@echo "  アプリ:          https://authzen.local"
+	@echo "  Keycloak 管理:   https://keycloak.local"
 
 policy-check: ## OPAポリシーのSyntax Checkを実行する
 	@OPA_TAG=$$(grep -A10 '^opa:' $(HELM_CHART)/values.yaml | grep 'tag:' | head -1 | awk '{print $$2}' | tr -d '"'); \
@@ -67,7 +67,7 @@ keycloak-setup: ## Keycloak設定の確認
 	@echo "Realm: opatest  Client: opatest_client  User: test/test"
 
 build-backend: ## バックエンドDockerイメージをビルドする
-	eval $$(minikube docker-env) && \
+	eval $$(minikube docker-env  --profile=$(MINIKUBE_PROF)) && \
 	  docker build -t authzen/backend:latest apps/backend/
 
 build-nginx: ## Nginxイメージをビルドする

@@ -17,8 +17,8 @@ $hostsFile   = "C:\Windows\System32\drivers\etc\hosts"
 $hostnames   = @("authzen.local", "keycloak.local")
 $listenAddr  = "127.0.0.1"
 $ports       = @(
-    @{ listen = 30443; connect = 30443; label = "アプリ (HTTPS)" },
-    @{ listen = 30080; connect = 30080; label = "Keycloak (HTTP)" }
+    @{ listen = 443;   connect = 30443; label = "アプリ (HTTPS)" },
+    @{ listen = 80;    connect = 30080; label = "HTTP→HTTPS リダイレクト" }
 )
 
 # --- WSL2 の IP アドレスを取得 ---
@@ -60,8 +60,8 @@ foreach ($p in $ports) {
 
 Write-Host ""
 Write-Host "=== トンネル起動中 ==="
-Write-Host "  アプリ:          https://authzen.local:30443"
-Write-Host "  Keycloak 管理:   http://keycloak.local:30080"
+Write-Host "  アプリ:          https://authzen.local"
+Write-Host "  Keycloak 管理:   https://keycloak.local"
 Write-Host ""
 Write-Host "停止するには Enter を押してください..."
 

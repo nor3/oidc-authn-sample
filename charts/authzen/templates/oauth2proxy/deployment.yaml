@@ -27,6 +27,7 @@ spec:
             # --insecure-oidc-skip-issuer-verification で不一致を許容する
             - --oidc-issuer-url={{ .Values.oauth2proxy.oidc.issuerUrl }}
             - --insecure-oidc-skip-issuer-verification=true
+            - --insecure-oidc-allow-unverified-email=true
             - --ssl-insecure-skip-verify=true
             - --client-id={{ .Values.oauth2proxy.oidc.clientId }}
             - --redirect-url={{ .Values.oauth2proxy.oidc.redirectUrl }}
@@ -42,9 +43,9 @@ spec:
             - --cookie-samesite=lax
             - --skip-provider-button=true
             # Swagger UI パスは認証バイパス
-            - --skip-auth-route=^/docs
-            - --skip-auth-route=^/redoc
-            - --skip-auth-route=^/openapi\.json$
+            - '--skip-auth-route=^/docs'
+            - '--skip-auth-route=^/redoc'
+            - '--skip-auth-route=^/openapi\.json$'
           env:
             - name: OAUTH2_PROXY_CLIENT_SECRET
               valueFrom:
