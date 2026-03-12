@@ -1,12 +1,12 @@
-# authzen tunnel - Windows側で管理者として実行するスクリプト
-# netsh portproxy で Windows localhost → WSL2 内の kubectl port-forward に転送する
+# authzen tunnel - Script to run as administrator on Windows
+# Forwards Windows localhost to WSL2 kubectl port-forward via netsh portproxy
 #
-# 使い方: PowerShell (管理者) で .\scripts\tunnel.ps1
+# Usage: PowerShell (as admin) .\scripts\tunnel.ps1
 
-# --- 管理者権限チェック・昇格 ---
+# --- Admin privilege check / elevation ---
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "管理者権限で再起動します..."
+    Write-Host "Re-launching with admin privileges..."
     Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     exit
 }
@@ -17,32 +17,32 @@ $hostsFile   = "C:\Windows\System32\drivers\etc\hosts"
 $hostnames   = @("authzen.local", "keycloak.local")
 $listenAddr  = "127.0.0.1"
 $ports       = @(
-    @{ listen = 443;   connect = 30443; label = "アプリ (HTTPS)" },
-    @{ listen = 80;    connect = 30080; label = "HTTP→HTTPS リダイレクト" }
+    @{ listen = 443;   connect = 30443; label = "App (HTTPS)" },
+    @{ listen = 80;    connect = 30080; label = "HTTP to HTTPS redirect" }
 )
 
-# --- WSL2 の IP アドレスを取得 ---
+# --- Get WSL2 IP address ---
 $wslIp = (wsl hostname -I).Trim().Split(' ')[0]
 if (-not $wslIp) {
-    Write-Error "WSL2 の IP アドレスを取得できませんでした。WSL2 が起動しているか確認してください。"
+    Write-Error "Failed to get WSL2 IP address. Please check if WSL2 is running."
     exit 1
 }
 Write-Host "WSL2 IP: $wslIp"
 
-# --- hosts ファイルへの追加 ---
+# --- Add entries to hosts file ---
 $hostsContent = Get-Content $hostsFile -Raw -ErrorAction SilentlyContinue
 $missing = $hostnames | Where-Object { $hostsContent -notmatch "\b$_\b" }
 if ($missing.Count -gt 0) {
     $entry = "`n$listenAddr " + ($hostnames -join " ")
     Add-Content -Path $hostsFile -Value $entry
-    Write-Host "hosts に追加しました: $($missing -join ', ')"
+    Write-Host "Added to hosts: $($missing -join ', ')"
 } else {
-    Write-Host "hosts は設定済みです。"
+    Write-Host "hosts already configured."
 }
 
-# --- WSL2 内で kubectl port-forward を起動 ---
+# --- Launch kubectl port-forward in WSL2 ---
 Write-Host ""
-Write-Host "kubectl port-forward を WSL2 内で起動中..."
+Write-Host "Starting kubectl port-forward in WSL2..."
 $pfProc = Start-Process wsl -ArgumentList (
     "-- kubectl port-forward svc/ingress-nginx-controller " +
     "-n ingress-nginx --address 0.0.0.0 30443:443 30080:80"
@@ -50,7 +50,7 @@ $pfProc = Start-Process wsl -ArgumentList (
 
 Start-Sleep -Seconds 3
 
-# --- netsh portproxy の設定 ---
+# --- Configure netsh portproxy ---
 foreach ($p in $ports) {
     netsh interface portproxy add v4tov4 `
         listenaddress=$listenAddr listenport=$($p.listen) `
@@ -59,25 +59,25 @@ foreach ($p in $ports) {
 }
 
 Write-Host ""
-Write-Host "=== トンネル起動中 ==="
-Write-Host "  アプリ:          https://authzen.local"
-Write-Host "  Keycloak 管理:   https://keycloak.local"
+Write-Host "=== Tunnel started ==="
+Write-Host "  App:             https://authzen.local"
+Write-Host "  Keycloak admin:  https://keycloak.local"
 Write-Host ""
-Write-Host "停止するには Enter を押してください..."
+Write-Host "Press Enter to stop..."
 
 try {
     Read-Host | Out-Null
 } finally {
-    # --- クリーンアップ ---
-    Write-Host "クリーンアップ中..."
+    # --- Cleanup ---
+    Write-Host "Cleaning up..."
     foreach ($p in $ports) {
         netsh interface portproxy delete v4tov4 `
             listenaddress=$listenAddr listenport=$($p.listen) 2>$null | Out-Null
     }
     if ($pfProc -and -not $pfProc.HasExited) {
-        # wsl プロセス経由で起動したため、wsl内のkubectlも終了させる
+        # Launched via wsl process, so kill kubectl from within wsl
         wsl -- pkill -f "kubectl port-forward" 2>$null
         Stop-Process -Id $pfProc.Id -Force -ErrorAction SilentlyContinue
     }
-    Write-Host "トンネルを停止しました。"
+    Write-Host "Tunnel stopped."
 }
